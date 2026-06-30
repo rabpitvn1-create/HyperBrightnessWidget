@@ -12,7 +12,7 @@ import android.os.IBinder;
 import android.provider.Settings;
 
 public class BackgroundBrightnessService extends Service implements SensorEventListener {
-    private static final float NORMAL_TO_DARK_LUX = 35.0f;
+    private static final float NORMAL_TO_DARK_LUX = 15.0f;
     private static final float DARK_TO_NORMAL_LUX = 70.0f;
     private static final float NORMAL_TO_BRIGHT_LUX = 800.0f;
     private static final float BRIGHT_TO_NORMAL_LUX = 550.0f;
