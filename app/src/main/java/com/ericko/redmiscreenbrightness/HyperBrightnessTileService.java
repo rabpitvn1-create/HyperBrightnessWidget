@@ -19,8 +19,7 @@ public class HyperBrightnessTileService extends TileService {
     public static final int BAND_TOO_DARK = 1;
     public static final int BAND_TOO_BRIGHT = 2;
 
-    private static final float DARK_HOLD_UNTIL_LUX = 70.0f;
-    private static final float BRIGHT_HOLD_UNTIL_LUX = 550.0f;
+    private static final float DARK_START_LUX = 35.0f;
     private static final float BRIGHT_START_LUX = 800.0f;
 
     private static final int[][] LEVELS = new int[][]{
@@ -103,11 +102,11 @@ public class HyperBrightnessTileService extends TileService {
             return currentBand;
         }
 
-        if (currentBand == BAND_TOO_DARK || lastLux < DARK_HOLD_UNTIL_LUX) {
+        if (currentBand == BAND_TOO_DARK || lastLux < DARK_START_LUX) {
             return BAND_TOO_DARK;
         }
 
-        if (currentBand == BAND_TOO_BRIGHT || lastLux >= BRIGHT_START_LUX || lastLux >= BRIGHT_HOLD_UNTIL_LUX) {
+        if (currentBand == BAND_TOO_BRIGHT || lastLux >= BRIGHT_START_LUX) {
             return BAND_TOO_BRIGHT;
         }
 
