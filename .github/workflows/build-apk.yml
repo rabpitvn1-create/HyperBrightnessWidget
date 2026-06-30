@@ -1,0 +1,52 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build unsigned APK
+        run: python scripts/build_hysteresis_apk.py
+
+      - name: Create debug keystore
+        run: |
+          keytool -genkeypair \
+            -keystore debug.keystore \
+            -storepass android \
+            -keypass android \
+            -alias androiddebugkey \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Sign APK
+        run: |
+          jarsigner \
+            -keystore debug.keystore \
+            -storepass android \
+            -keypass android \
+            -keypass android \
+            -signedjar dist/RedmiScreenBrightness_sensor_hysteresis_35_70_550_800_signed.apk \
+            dist/RedmiScreenBrightness_sensor_hysteresis_35_70_550_800_unsigned.apk \
+            androiddebugkey
+          jarsigner -verify -verbose -certs dist/RedmiScreenBrightness_sensor_hysteresis_35_70_550_800_signed.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RedmiScreenBrightness-sensor-hysteresis
+          path: dist/RedmiScreenBrightness_sensor_hysteresis_35_70_550_800_signed.apk
+          if-no-files-found: error
