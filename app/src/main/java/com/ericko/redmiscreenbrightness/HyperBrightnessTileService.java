@@ -19,7 +19,7 @@ public class HyperBrightnessTileService extends TileService {
     public static final int BAND_TOO_DARK = 1;
     public static final int BAND_TOO_BRIGHT = 2;
 
-    private static final float DARK_START_LUX = 35.0f;
+    private static final float DARK_START_LUX = 15.0f;
     private static final float BRIGHT_START_LUX = 800.0f;
 
     private static final int[][] LEVELS = new int[][]{
