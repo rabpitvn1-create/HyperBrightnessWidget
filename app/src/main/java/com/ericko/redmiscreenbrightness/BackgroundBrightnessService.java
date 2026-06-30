@@ -3,6 +3,7 @@ package com.ericko.redmiscreenbrightness;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -11,13 +12,6 @@ import android.os.IBinder;
 import android.provider.Settings;
 
 public class BackgroundBrightnessService extends Service implements SensorEventListener {
-    private static final String PREFS = "hyper_brightness";
-    private static final String KEY_SENSOR_BAND = "sensor_band";
-
-    private static final int BAND_NORMAL = 0;
-    private static final int BAND_TOO_DARK = 1;
-    private static final int BAND_TOO_BRIGHT = 2;
-
     private static final float NORMAL_TO_DARK_LUX = 35.0f;
     private static final float DARK_TO_NORMAL_LUX = 70.0f;
     private static final float NORMAL_TO_BRIGHT_LUX = 800.0f;
@@ -26,7 +20,7 @@ public class BackgroundBrightnessService extends Service implements SensorEventL
     private SensorManager sensorManager;
     private Sensor lightSensor;
     private boolean registered;
-    private int band = BAND_NORMAL;
+    private int band = HyperBrightnessTileService.BAND_NORMAL;
 
     public static void start(Context context) {
         try {
@@ -38,7 +32,8 @@ public class BackgroundBrightnessService extends Service implements SensorEventL
     @Override
     public void onCreate() {
         super.onCreate();
-        band = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(KEY_SENSOR_BAND, BAND_NORMAL);
+        band = getSharedPreferences(HyperBrightnessTileService.PREFS, MODE_PRIVATE)
+                .getInt(HyperBrightnessTileService.KEY_SENSOR_BAND, HyperBrightnessTileService.BAND_NORMAL);
         registerLightSensor();
     }
 
@@ -87,37 +82,85 @@ public class BackgroundBrightnessService extends Service implements SensorEventL
         }
 
         float lux = event.values[0];
+        SharedPreferences prefs = getSharedPreferences(HyperBrightnessTileService.PREFS, MODE_PRIVATE);
+        prefs.edit().putFloat(HyperBrightnessTileService.KEY_LAST_LUX, lux).apply();
 
-        if (band == BAND_NORMAL) {
+        if (manualOverrideBlocksAuto(prefs, lux)) {
+            return;
+        }
+
+        if (band == HyperBrightnessTileService.BAND_NORMAL) {
             if (lux < NORMAL_TO_DARK_LUX) {
-                applyBand(BAND_TOO_DARK, 20, 11);
+                applyBand(HyperBrightnessTileService.BAND_TOO_DARK, 20, 11);
             } else if (lux >= NORMAL_TO_BRIGHT_LUX) {
-                applyBand(BAND_TOO_BRIGHT, 60, 49);
+                applyBand(HyperBrightnessTileService.BAND_TOO_BRIGHT, 60, 49);
             }
             return;
         }
 
-        if (band == BAND_TOO_DARK) {
+        if (band == HyperBrightnessTileService.BAND_TOO_DARK) {
             if (lux > DARK_TO_NORMAL_LUX) {
-                applyBand(BAND_NORMAL, 30, 17);
+                applyBand(HyperBrightnessTileService.BAND_NORMAL, 30, 17);
             }
             return;
         }
 
-        if (band == BAND_TOO_BRIGHT && lux < BRIGHT_TO_NORMAL_LUX) {
-            applyBand(BAND_NORMAL, 30, 17);
+        if (band == HyperBrightnessTileService.BAND_TOO_BRIGHT && lux < BRIGHT_TO_NORMAL_LUX) {
+            applyBand(HyperBrightnessTileService.BAND_NORMAL, 30, 17);
         }
     }
 
+    private boolean manualOverrideBlocksAuto(SharedPreferences prefs, float lux) {
+        if (!prefs.getBoolean(HyperBrightnessTileService.KEY_MANUAL_OVERRIDE, false)) {
+            return false;
+        }
+
+        int overrideBand = prefs.getInt(
+                HyperBrightnessTileService.KEY_MANUAL_OVERRIDE_BAND,
+                band
+        );
+
+        if (overrideBand == HyperBrightnessTileService.BAND_TOO_DARK) {
+            if (lux <= DARK_TO_NORMAL_LUX) {
+                return true;
+            }
+            clearManualOverride(prefs, HyperBrightnessTileService.BAND_NORMAL);
+            return false;
+        }
+
+        if (overrideBand == HyperBrightnessTileService.BAND_TOO_BRIGHT) {
+            if (lux >= BRIGHT_TO_NORMAL_LUX) {
+                return true;
+            }
+            clearManualOverride(prefs, HyperBrightnessTileService.BAND_NORMAL);
+            return false;
+        }
+
+        if (lux >= NORMAL_TO_DARK_LUX && lux < NORMAL_TO_BRIGHT_LUX) {
+            return true;
+        }
+
+        clearManualOverride(prefs, HyperBrightnessTileService.BAND_NORMAL);
+        return false;
+    }
+
+    private void clearManualOverride(SharedPreferences prefs, int newBand) {
+        band = newBand;
+        prefs.edit()
+                .putBoolean(HyperBrightnessTileService.KEY_MANUAL_OVERRIDE, false)
+                .putInt(HyperBrightnessTileService.KEY_SENSOR_BAND, newBand)
+                .apply();
+    }
+
     private void applyBand(int newBand, int percent, int raw) {
-        boolean applied = HyperBrightnessTileService.applyBrightness(this, percent, raw);
+        boolean applied = HyperBrightnessTileService.applyAutomaticBrightness(this, percent, raw);
         if (!applied) {
             return;
         }
         band = newBand;
-        getSharedPreferences(PREFS, MODE_PRIVATE)
+        getSharedPreferences(HyperBrightnessTileService.PREFS, MODE_PRIVATE)
                 .edit()
-                .putInt(KEY_SENSOR_BAND, newBand)
+                .putInt(HyperBrightnessTileService.KEY_SENSOR_BAND, newBand)
                 .apply();
     }
 
