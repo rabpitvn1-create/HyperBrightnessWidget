@@ -128,18 +128,6 @@ public class BackgroundBrightnessService extends Service implements SensorEventL
             return false;
         }
 
-        if (overrideBand == HyperBrightnessTileService.BAND_TOO_BRIGHT) {
-            if (lux >= BRIGHT_TO_NORMAL_LUX) {
-                return true;
-            }
-            clearManualOverride(prefs, HyperBrightnessTileService.BAND_NORMAL);
-            return false;
-        }
-
-        if (lux >= NORMAL_TO_DARK_LUX && lux < NORMAL_TO_BRIGHT_LUX) {
-            return true;
-        }
-
         clearManualOverride(prefs, HyperBrightnessTileService.BAND_NORMAL);
         return false;
     }
