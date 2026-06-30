@@ -12,41 +12,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
-          python-version: '3.12'
+          distribution: temurin
+          java-version: '17'
 
-      - name: Build unsigned APK
-        run: python scripts/build_hysteresis_apk.py
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Create debug keystore
-        run: |
-          keytool -genkeypair \
-            -keystore debug.keystore \
-            -storepass android \
-            -keypass android \
-            -alias androiddebugkey \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Sign APK
-        run: |
-          jarsigner \
-            -keystore debug.keystore \
-            -storepass android \
-            -keypass android \
-            -keypass android \
-            -signedjar dist/RedmiScreenBrightness_sensor_hysteresis_35_70_550_800_signed.apk \
-            dist/RedmiScreenBrightness_sensor_hysteresis_35_70_550_800_unsigned.apk \
-            androiddebugkey
-          jarsigner -verify -verbose -certs dist/RedmiScreenBrightness_sensor_hysteresis_35_70_550_800_signed.apk
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --no-daemon
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: RedmiScreenBrightness-sensor-hysteresis
-          path: dist/RedmiScreenBrightness_sensor_hysteresis_35_70_550_800_signed.apk
+          name: RedmiScreenBrightness-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
