@@ -2,9 +2,7 @@ package com.ericko.redmiscreenbrightness;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.net.Uri;
 import android.os.Bundle;
-import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -27,7 +25,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (Settings.System.canWrite(this) && HyperBrightnessTileService.isEnabled(this)) {
+        if (HyperBrightnessTileService.isEnabled(this)) {
             HyperBrightnessTileService.reapplyIfEnabled(this);
         }
         refreshStatus();
@@ -53,19 +51,29 @@ public class MainActivity extends Activity {
         statusText.setPadding(0, dp(12), 0, dp(12));
         root.addView(statusText, fullWidth());
 
-        Button permissionButton = new Button(this);
-        permissionButton.setText("Grant modify system settings");
-        permissionButton.setOnClickListener(v -> openWriteSettingsPermission());
-        root.addView(permissionButton, fullWidth());
+        Button openShizukuButton = new Button(this);
+        openShizukuButton.setText("Open Shizuku");
+        openShizukuButton.setOnClickListener(v -> openShizukuManager());
+        root.addView(openShizukuButton, fullWidth());
+
+        Button shizukuPermissionButton = new Button(this);
+        shizukuPermissionButton.setText("Grant Shizuku permission");
+        shizukuPermissionButton.setOnClickListener(v -> requestShizukuPermission());
+        root.addView(shizukuPermissionButton, fullWidth());
 
         Button enableButton = new Button(this);
         enableButton.setText("Enable Auto -20%");
         enableButton.setOnClickListener(v -> {
+            if (!ensureShizukuReady()) {
+                refreshStatus();
+                return;
+            }
+
             boolean ok = HyperBrightnessTileService.setEnabled(this, true);
             Toast.makeText(
                     this,
-                    ok ? "Auto brightness enabled with -20% bias" : "Grant modify system settings first",
-                    Toast.LENGTH_SHORT
+                    ok ? "Auto brightness ON, adjustment set to -0.20" : operationError("Enable failed"),
+                    Toast.LENGTH_LONG
             ).show();
             refreshStatus();
         });
@@ -74,11 +82,16 @@ public class MainActivity extends Activity {
         Button disableButton = new Button(this);
         disableButton.setText("Disable -20% bias");
         disableButton.setOnClickListener(v -> {
+            if (!ensureShizukuReady()) {
+                refreshStatus();
+                return;
+            }
+
             boolean ok = HyperBrightnessTileService.setEnabled(this, false);
             Toast.makeText(
                     this,
-                    ok ? "Previous auto-brightness adjustment restored" : "Grant modify system settings first",
-                    Toast.LENGTH_SHORT
+                    ok ? "Previous auto-brightness adjustment restored" : operationError("Disable failed"),
+                    Toast.LENGTH_LONG
             ).show();
             refreshStatus();
         });
@@ -87,11 +100,12 @@ public class MainActivity extends Activity {
         TextView note = new TextView(this);
         note.setText(
                 "How it works:\n" +
-                "• Android/HyperOS keeps Automatic brightness enabled.\n" +
-                "• The app no longer reads the ambient-light sensor or chooses its own brightness levels.\n" +
-                "• It applies screen_auto_brightness_adj = -0.20.\n" +
-                "• Disabling the feature restores the adjustment value that existed before enabling it.\n\n" +
-                "Note: -0.20 is Android's auto-brightness bias value. It is not guaranteed to equal an exact 20% reduction in physical panel luminance."
+                "• HyperOS keeps Automatic brightness enabled.\n" +
+                "• The app does not read the ambient-light sensor or choose brightness levels itself.\n" +
+                "• Android marks screen_auto_brightness_adj as a private system setting, so the write is performed through Shizuku shell access.\n" +
+                "• Enable writes screen_brightness_mode = 1 and screen_auto_brightness_adj = -0.20.\n" +
+                "• Disable restores the adjustment value saved before Enable.\n\n" +
+                "Shizuku must be installed, started, and authorized for this app. The old Modify system settings permission is no longer required."
         );
         note.setTextSize(14);
         note.setPadding(0, dp(16), 0, 0);
@@ -100,25 +114,72 @@ public class MainActivity extends Activity {
         return scrollView;
     }
 
-    private void openWriteSettingsPermission() {
-        Intent intent = new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS);
-        intent.setData(Uri.parse("package:" + getPackageName()));
-        startActivity(intent);
+    private boolean ensureShizukuReady() {
+        if (!ShizukuBridge.isAvailable()) {
+            Toast.makeText(this, "Shizuku is not running. Start Shizuku first.", Toast.LENGTH_LONG).show();
+            return false;
+        }
+
+        if (!ShizukuBridge.hasPermission()) {
+            requestShizukuPermission();
+            Toast.makeText(this, "Grant Shizuku permission, then tap the button again.", Toast.LENGTH_LONG).show();
+            return false;
+        }
+
+        return true;
     }
 
-    private void refreshStatus() {
-        boolean canWrite = Settings.System.canWrite(this);
-        if (!canWrite) {
-            statusText.setText("Permission missing. Grant modify system settings first.");
+    private void requestShizukuPermission() {
+        if (!ShizukuBridge.isAvailable()) {
+            Toast.makeText(this, "Shizuku is not running. Start it first.", Toast.LENGTH_LONG).show();
+            openShizukuManager();
             return;
         }
 
+        if (ShizukuBridge.hasPermission()) {
+            Toast.makeText(this, "Shizuku permission already granted", Toast.LENGTH_SHORT).show();
+            refreshStatus();
+            return;
+        }
+
+        boolean requested = ShizukuBridge.requestPermission();
+        if (!requested) {
+            Toast.makeText(this, operationError("Unable to request Shizuku permission"), Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void openShizukuManager() {
+        try {
+            Intent intent = getPackageManager().getLaunchIntentForPackage("moe.shizuku.privileged.api");
+            if (intent == null) {
+                Toast.makeText(this, "Shizuku is not installed", Toast.LENGTH_LONG).show();
+                return;
+            }
+            startActivity(intent);
+        } catch (Throwable error) {
+            Toast.makeText(this, "Unable to open Shizuku", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private String operationError(String prefix) {
+        String detail = ShizukuBridge.getLastError();
+        if (detail == null || detail.trim().isEmpty()) {
+            return prefix + ". The setting could not be written or verified.";
+        }
+        return prefix + ": " + detail;
+    }
+
+    private void refreshStatus() {
+        boolean shizukuRunning = ShizukuBridge.isAvailable();
+        boolean shizukuGranted = shizukuRunning && ShizukuBridge.hasPermission();
         boolean featureEnabled = HyperBrightnessTileService.isEnabled(this);
         boolean autoEnabled = HyperBrightnessTileService.isAutomaticBrightnessEnabled(this);
         float adjustment = HyperBrightnessTileService.getCurrentAdjustment(this);
 
         statusText.setText(
-                "Feature: " + (featureEnabled ? "ON" : "OFF") +
+                "Shizuku: " + (shizukuRunning ? "RUNNING" : "NOT RUNNING") +
+                "\nShizuku permission: " + (shizukuGranted ? "GRANTED" : "NOT GRANTED") +
+                "\nFeature: " + (featureEnabled ? "ON" : "OFF") +
                 "\nSystem auto brightness: " + (autoEnabled ? "ON" : "OFF") +
                 "\nCurrent auto-brightness adjustment: " + String.format(Locale.US, "%.2f", adjustment)
         );
