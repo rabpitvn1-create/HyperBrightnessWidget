@@ -13,6 +13,8 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.Locale;
+
 public class MainActivity extends Activity {
     private TextView statusText;
 
@@ -25,10 +27,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        refreshStatus();
-        if (Settings.System.canWrite(this)) {
-            BackgroundBrightnessService.start(this);
+        if (Settings.System.canWrite(this) && HyperBrightnessTileService.isEnabled(this)) {
+            HyperBrightnessTileService.reapplyIfEnabled(this);
         }
+        refreshStatus();
     }
 
     private View createContentView() {
@@ -41,7 +43,7 @@ public class MainActivity extends Activity {
         scrollView.addView(root);
 
         TextView title = new TextView(this);
-        title.setText("Redmi Screen Brightness");
+        title.setText("Auto Brightness -20%");
         title.setTextSize(22);
         title.setGravity(Gravity.CENTER);
         root.addView(title, fullWidth());
@@ -56,30 +58,46 @@ public class MainActivity extends Activity {
         permissionButton.setOnClickListener(v -> openWriteSettingsPermission());
         root.addView(permissionButton, fullWidth());
 
-        addBrightnessButton(root, "20% - raw 11", 20, 11);
-        addBrightnessButton(root, "30% - raw 17", 30, 17);
-        addBrightnessButton(root, "40% - raw 26", 40, 26);
-        addBrightnessButton(root, "50% - raw 38", 50, 38);
-        addBrightnessButton(root, "60% - raw 49", 60, 49);
+        Button enableButton = new Button(this);
+        enableButton.setText("Enable Auto -20%");
+        enableButton.setOnClickListener(v -> {
+            boolean ok = HyperBrightnessTileService.setEnabled(this, true);
+            Toast.makeText(
+                    this,
+                    ok ? "Auto brightness enabled with -20% bias" : "Grant modify system settings first",
+                    Toast.LENGTH_SHORT
+            ).show();
+            refreshStatus();
+        });
+        root.addView(enableButton, fullWidth());
+
+        Button disableButton = new Button(this);
+        disableButton.setText("Disable -20% bias");
+        disableButton.setOnClickListener(v -> {
+            boolean ok = HyperBrightnessTileService.setEnabled(this, false);
+            Toast.makeText(
+                    this,
+                    ok ? "Previous auto-brightness adjustment restored" : "Grant modify system settings first",
+                    Toast.LENGTH_SHORT
+            ).show();
+            refreshStatus();
+        });
+        root.addView(disableButton, fullWidth());
 
         TextView note = new TextView(this);
-        note.setText("Sensor policy:\nNORMAL does not auto-adjust.\nTOO_DARK applies 20%.\nTOO_BRIGHT applies 60%.\nReturning from either state to NORMAL applies 30% once.");
+        note.setText(
+                "How it works:\n" +
+                "• Android/HyperOS keeps Automatic brightness enabled.\n" +
+                "• The app no longer reads the ambient-light sensor or chooses its own brightness levels.\n" +
+                "• It applies screen_auto_brightness_adj = -0.20.\n" +
+                "• Disabling the feature restores the adjustment value that existed before enabling it.\n\n" +
+                "Note: -0.20 is Android's auto-brightness bias value. It is not guaranteed to equal an exact 20% reduction in physical panel luminance."
+        );
         note.setTextSize(14);
         note.setPadding(0, dp(16), 0, 0);
         root.addView(note, fullWidth());
 
         return scrollView;
-    }
-
-    private void addBrightnessButton(LinearLayout root, String label, int percent, int raw) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setOnClickListener(v -> {
-            boolean ok = HyperBrightnessTileService.applyBrightness(this, percent, raw);
-            Toast.makeText(this, ok ? "Applied " + label : "Grant modify system settings first", Toast.LENGTH_SHORT).show();
-            refreshStatus();
-        });
-        root.addView(button, fullWidth());
     }
 
     private void openWriteSettingsPermission() {
@@ -90,9 +108,20 @@ public class MainActivity extends Activity {
 
     private void refreshStatus() {
         boolean canWrite = Settings.System.canWrite(this);
-        statusText.setText(canWrite
-                ? "Permission granted. Background light sensor service is enabled."
-                : "Permission missing. Grant modify system settings before brightness can be changed.");
+        if (!canWrite) {
+            statusText.setText("Permission missing. Grant modify system settings first.");
+            return;
+        }
+
+        boolean featureEnabled = HyperBrightnessTileService.isEnabled(this);
+        boolean autoEnabled = HyperBrightnessTileService.isAutomaticBrightnessEnabled(this);
+        float adjustment = HyperBrightnessTileService.getCurrentAdjustment(this);
+
+        statusText.setText(
+                "Feature: " + (featureEnabled ? "ON" : "OFF") +
+                "\nSystem auto brightness: " + (autoEnabled ? "ON" : "OFF") +
+                "\nCurrent auto-brightness adjustment: " + String.format(Locale.US, "%.2f", adjustment)
+        );
     }
 
     private LinearLayout.LayoutParams fullWidth() {
