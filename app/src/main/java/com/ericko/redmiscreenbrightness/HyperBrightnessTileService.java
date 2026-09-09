@@ -52,7 +52,7 @@ public class HyperBrightnessTileService extends TileService {
 
         try {
             if (enabled) {
-                if (!prefs.getBoolean(KEY_ENABLED, false)) {
+                if (!prefs.getBoolean(KEY_PREVIOUS_ADJ_SAVED, false)) {
                     float previousAdjustment = getCurrentAdjustment(context);
                     prefs.edit()
                             .putFloat(KEY_PREVIOUS_ADJ, previousAdjustment)
