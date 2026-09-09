@@ -10,12 +10,20 @@ import android.service.quicksettings.TileService;
 public class HyperBrightnessTileService extends TileService {
     public static final String PREFS = "hyper_brightness";
     public static final String KEY_ENABLED = "auto_minus_20_enabled";
+
+    // Legacy v2.1 keys. Kept so an upgrade can restore the old adjustment once.
     private static final String KEY_PREVIOUS_ADJ = "previous_auto_brightness_adj";
     private static final String KEY_PREVIOUS_ADJ_SAVED = "previous_auto_brightness_adj_saved";
-
     private static final String AUTO_BRIGHTNESS_ADJ_KEY = "screen_auto_brightness_adj";
-    private static final float AUTO_BRIGHTNESS_ADJ = -0.20f;
-    private static final float VERIFY_TOLERANCE = 0.02f;
+
+    // Android's native Reduce Bright Colors / Extra Dim settings.
+    private static final String RBC_ACTIVE_KEY = "reduce_bright_colors_activated";
+    private static final String RBC_LEVEL_KEY = "reduce_bright_colors_level";
+    private static final int RBC_LEVEL = 20;
+
+    private static final String KEY_PREVIOUS_RBC_ACTIVE = "previous_rbc_active";
+    private static final String KEY_PREVIOUS_RBC_LEVEL = "previous_rbc_level";
+    private static final String KEY_PREVIOUS_RBC_SAVED = "previous_rbc_saved";
 
     @Override
     public void onStartListening() {
@@ -52,15 +60,19 @@ public class HyperBrightnessTileService extends TileService {
 
         try {
             if (enabled) {
-                if (!prefs.getBoolean(KEY_PREVIOUS_ADJ_SAVED, false)) {
-                    float previousAdjustment = getCurrentAdjustment(context);
+                // v2.1 wrote screen_auto_brightness_adj. HyperOS can persist that key while
+                // ignoring it in the actual brightness pipeline, so restore the pre-v2.1 value.
+                restoreLegacyAdjustmentIfNeeded(prefs);
+
+                if (!prefs.getBoolean(KEY_PREVIOUS_RBC_SAVED, false)) {
                     prefs.edit()
-                            .putFloat(KEY_PREVIOUS_ADJ, previousAdjustment)
-                            .putBoolean(KEY_PREVIOUS_ADJ_SAVED, true)
+                            .putInt(KEY_PREVIOUS_RBC_ACTIVE, getReduceBrightColorsActivated(context) ? 1 : 0)
+                            .putInt(KEY_PREVIOUS_RBC_LEVEL, getReduceBrightColorsLevel(context))
+                            .putBoolean(KEY_PREVIOUS_RBC_SAVED, true)
                             .apply();
                 }
 
-                if (!applyMinus20WithShizuku()) {
+                if (!applyNativeDim()) {
                     return false;
                 }
 
@@ -72,25 +84,28 @@ public class HyperBrightnessTileService extends TileService {
                 return true;
             }
 
-            float restoreAdjustment = prefs.getBoolean(KEY_PREVIOUS_ADJ_SAVED, false)
-                    ? prefs.getFloat(KEY_PREVIOUS_ADJ, 0.0f)
-                    : 0.0f;
+            int restoreActive = prefs.getBoolean(KEY_PREVIOUS_RBC_SAVED, false)
+                    ? prefs.getInt(KEY_PREVIOUS_RBC_ACTIVE, 0)
+                    : 0;
+            int restoreLevel = prefs.getBoolean(KEY_PREVIOUS_RBC_SAVED, false)
+                    ? prefs.getInt(KEY_PREVIOUS_RBC_LEVEL, 50)
+                    : 50;
 
-            String command = "settings --user current put system "
-                    + AUTO_BRIGHTNESS_ADJ_KEY + " " + Float.toString(restoreAdjustment);
+            String command = "settings --user current put secure " + RBC_LEVEL_KEY + " " + restoreLevel
+                    + " && settings --user current put secure " + RBC_ACTIVE_KEY + " " + restoreActive;
             if (!ShizukuBridge.runShellCommand(command)) {
                 return false;
             }
 
-            float restored = getCurrentAdjustment(context);
-            if (Math.abs(restored - restoreAdjustment) > VERIFY_TOLERANCE) {
+            if (getReduceBrightColorsActivated(context) != (restoreActive == 1)) {
                 return false;
             }
 
             prefs.edit()
                     .putBoolean(KEY_ENABLED, false)
-                    .putBoolean(KEY_PREVIOUS_ADJ_SAVED, false)
+                    .putBoolean(KEY_PREVIOUS_RBC_SAVED, false)
                     .apply();
+            restoreLegacyAdjustmentIfNeeded(prefs);
             return true;
         } catch (Throwable ignored) {
             return false;
@@ -104,19 +119,35 @@ public class HyperBrightnessTileService extends TileService {
         if (!ShizukuBridge.isAvailable() || !ShizukuBridge.hasPermission()) {
             return false;
         }
-        return applyMinus20WithShizuku() && verifyEnabledState(context);
+        SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        restoreLegacyAdjustmentIfNeeded(prefs);
+        return applyNativeDim() && verifyEnabledState(context);
     }
 
-    private static boolean applyMinus20WithShizuku() {
+    private static boolean applyNativeDim() {
         String command = "settings --user current put system screen_brightness_mode 1"
-                + " && settings --user current put system "
-                + AUTO_BRIGHTNESS_ADJ_KEY + " " + Float.toString(AUTO_BRIGHTNESS_ADJ);
+                + " && settings --user current put secure " + RBC_LEVEL_KEY + " " + RBC_LEVEL
+                + " && settings --user current put secure " + RBC_ACTIVE_KEY + " 1";
         return ShizukuBridge.runShellCommand(command);
     }
 
     private static boolean verifyEnabledState(Context context) {
         return isAutomaticBrightnessEnabled(context)
-                && Math.abs(getCurrentAdjustment(context) - AUTO_BRIGHTNESS_ADJ) <= VERIFY_TOLERANCE;
+                && getReduceBrightColorsActivated(context)
+                && getReduceBrightColorsLevel(context) == RBC_LEVEL;
+    }
+
+    private static void restoreLegacyAdjustmentIfNeeded(SharedPreferences prefs) {
+        if (!prefs.getBoolean(KEY_PREVIOUS_ADJ_SAVED, false)) {
+            return;
+        }
+
+        float previousAdjustment = prefs.getFloat(KEY_PREVIOUS_ADJ, 0.0f);
+        String command = "settings --user current put system "
+                + AUTO_BRIGHTNESS_ADJ_KEY + " " + Float.toString(previousAdjustment);
+        if (ShizukuBridge.runShellCommand(command)) {
+            prefs.edit().putBoolean(KEY_PREVIOUS_ADJ_SAVED, false).apply();
+        }
     }
 
     public static boolean isEnabled(Context context) {
@@ -141,6 +172,30 @@ public class HyperBrightnessTileService extends TileService {
             ) == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC;
         } catch (Throwable ignored) {
             return false;
+        }
+    }
+
+    public static boolean getReduceBrightColorsActivated(Context context) {
+        try {
+            return Settings.Secure.getInt(
+                    context.getContentResolver(),
+                    RBC_ACTIVE_KEY,
+                    0
+            ) == 1;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    public static int getReduceBrightColorsLevel(Context context) {
+        try {
+            return Settings.Secure.getInt(
+                    context.getContentResolver(),
+                    RBC_LEVEL_KEY,
+                    50
+            );
+        } catch (Throwable ignored) {
+            return 50;
         }
     }
 
