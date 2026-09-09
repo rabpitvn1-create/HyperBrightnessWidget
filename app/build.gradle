@@ -8,7 +8,7 @@ android {
 
     defaultConfig {
         applicationId 'com.ericko.redmiscreenbrightness'
-        minSdk 23
+        minSdk 24
         targetSdk 25
         versionCode 4
         versionName '2.1-shizuku-auto-minus-20'
