@@ -1,6 +1,7 @@
 package com.ericko.redmiscreenbrightness;
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.provider.Settings;
 import android.service.quicksettings.Tile;
@@ -14,6 +15,7 @@ public class HyperBrightnessTileService extends TileService {
 
     private static final String AUTO_BRIGHTNESS_ADJ_KEY = "screen_auto_brightness_adj";
     private static final float AUTO_BRIGHTNESS_ADJ = -0.20f;
+    private static final float VERIFY_TOLERANCE = 0.02f;
 
     @Override
     public void onStartListening() {
@@ -26,47 +28,46 @@ public class HyperBrightnessTileService extends TileService {
     public void onClick() {
         super.onClick();
 
-        if (!Settings.System.canWrite(this)) {
+        if (!ShizukuBridge.isAvailable() || !ShizukuBridge.hasPermission()) {
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try {
+                startActivityAndCollapse(intent);
+            } catch (Throwable ignored) {
+                try {
+                    startActivity(intent);
+                } catch (Throwable ignoredAgain) {
+                }
+            }
             updateTileLabel(this);
             return;
         }
 
-        boolean enabled = isEnabled(this);
-        setEnabled(this, !enabled);
+        setEnabled(this, !isEnabled(this));
         updateTileLabel(this);
     }
 
     public static boolean setEnabled(Context context, boolean enabled) {
-        if (!Settings.System.canWrite(context)) {
-            return false;
-        }
-
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
 
         try {
             if (enabled) {
                 if (!prefs.getBoolean(KEY_ENABLED, false)) {
-                    float previousAdjustment = Settings.System.getFloat(
-                            context.getContentResolver(),
-                            AUTO_BRIGHTNESS_ADJ_KEY,
-                            0.0f
-                    );
+                    float previousAdjustment = getCurrentAdjustment(context);
                     prefs.edit()
                             .putFloat(KEY_PREVIOUS_ADJ, previousAdjustment)
                             .putBoolean(KEY_PREVIOUS_ADJ_SAVED, true)
                             .apply();
                 }
 
-                Settings.System.putInt(
-                        context.getContentResolver(),
-                        Settings.System.SCREEN_BRIGHTNESS_MODE,
-                        Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
-                );
-                Settings.System.putFloat(
-                        context.getContentResolver(),
-                        AUTO_BRIGHTNESS_ADJ_KEY,
-                        AUTO_BRIGHTNESS_ADJ
-                );
+                if (!applyMinus20WithShizuku()) {
+                    return false;
+                }
+
+                if (!verifyEnabledState(context)) {
+                    return false;
+                }
+
                 prefs.edit().putBoolean(KEY_ENABLED, true).apply();
                 return true;
             }
@@ -75,17 +76,23 @@ public class HyperBrightnessTileService extends TileService {
                     ? prefs.getFloat(KEY_PREVIOUS_ADJ, 0.0f)
                     : 0.0f;
 
-            Settings.System.putFloat(
-                    context.getContentResolver(),
-                    AUTO_BRIGHTNESS_ADJ_KEY,
-                    restoreAdjustment
-            );
+            String command = "settings --user current put system "
+                    + AUTO_BRIGHTNESS_ADJ_KEY + " " + Float.toString(restoreAdjustment);
+            if (!ShizukuBridge.runShellCommand(command)) {
+                return false;
+            }
+
+            float restored = getCurrentAdjustment(context);
+            if (Math.abs(restored - restoreAdjustment) > VERIFY_TOLERANCE) {
+                return false;
+            }
+
             prefs.edit()
                     .putBoolean(KEY_ENABLED, false)
                     .putBoolean(KEY_PREVIOUS_ADJ_SAVED, false)
                     .apply();
             return true;
-        } catch (Exception ignored) {
+        } catch (Throwable ignored) {
             return false;
         }
     }
@@ -94,25 +101,22 @@ public class HyperBrightnessTileService extends TileService {
         if (!isEnabled(context)) {
             return false;
         }
-        if (!Settings.System.canWrite(context)) {
+        if (!ShizukuBridge.isAvailable() || !ShizukuBridge.hasPermission()) {
             return false;
         }
+        return applyMinus20WithShizuku() && verifyEnabledState(context);
+    }
 
-        try {
-            Settings.System.putInt(
-                    context.getContentResolver(),
-                    Settings.System.SCREEN_BRIGHTNESS_MODE,
-                    Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
-            );
-            Settings.System.putFloat(
-                    context.getContentResolver(),
-                    AUTO_BRIGHTNESS_ADJ_KEY,
-                    AUTO_BRIGHTNESS_ADJ
-            );
-            return true;
-        } catch (Exception ignored) {
-            return false;
-        }
+    private static boolean applyMinus20WithShizuku() {
+        String command = "settings --user current put system screen_brightness_mode 1"
+                + " && settings --user current put system "
+                + AUTO_BRIGHTNESS_ADJ_KEY + " " + Float.toString(AUTO_BRIGHTNESS_ADJ);
+        return ShizukuBridge.runShellCommand(command);
+    }
+
+    private static boolean verifyEnabledState(Context context) {
+        return isAutomaticBrightnessEnabled(context)
+                && Math.abs(getCurrentAdjustment(context) - AUTO_BRIGHTNESS_ADJ) <= VERIFY_TOLERANCE;
     }
 
     public static boolean isEnabled(Context context) {
@@ -135,7 +139,7 @@ public class HyperBrightnessTileService extends TileService {
                     Settings.System.SCREEN_BRIGHTNESS_MODE,
                     Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
             ) == Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC;
-        } catch (Exception ignored) {
+        } catch (Throwable ignored) {
             return false;
         }
     }
@@ -146,11 +150,11 @@ public class HyperBrightnessTileService extends TileService {
             return;
         }
 
-        boolean canWrite = Settings.System.canWrite(context);
+        boolean shizukuReady = ShizukuBridge.isAvailable() && ShizukuBridge.hasPermission();
         boolean enabled = isEnabled(context);
 
-        if (!canWrite) {
-            tile.setLabel("Grant permission");
+        if (!shizukuReady) {
+            tile.setLabel("Setup Shizuku");
             tile.setState(Tile.STATE_INACTIVE);
         } else if (enabled) {
             tile.setLabel("Auto -20%");
