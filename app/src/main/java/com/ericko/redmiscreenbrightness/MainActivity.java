@@ -72,7 +72,7 @@ public class MainActivity extends Activity {
             boolean ok = HyperBrightnessTileService.setEnabled(this, true);
             Toast.makeText(
                     this,
-                    ok ? "Auto brightness ON, adjustment set to -0.20" : operationError("Enable failed"),
+                    ok ? "Auto brightness kept ON; native Extra Dim level 20 enabled" : operationError("Enable failed"),
                     Toast.LENGTH_LONG
             ).show();
             refreshStatus();
@@ -80,7 +80,7 @@ public class MainActivity extends Activity {
         root.addView(enableButton, fullWidth());
 
         Button disableButton = new Button(this);
-        disableButton.setText("Disable -20% bias");
+        disableButton.setText("Disable -20% dimming");
         disableButton.setOnClickListener(v -> {
             if (!ensureShizukuReady()) {
                 refreshStatus();
@@ -90,7 +90,7 @@ public class MainActivity extends Activity {
             boolean ok = HyperBrightnessTileService.setEnabled(this, false);
             Toast.makeText(
                     this,
-                    ok ? "Previous auto-brightness adjustment restored" : operationError("Disable failed"),
+                    ok ? "Previous Extra Dim state restored" : operationError("Disable failed"),
                     Toast.LENGTH_LONG
             ).show();
             refreshStatus();
@@ -99,13 +99,13 @@ public class MainActivity extends Activity {
 
         TextView note = new TextView(this);
         note.setText(
-                "How it works:\n" +
-                "• HyperOS keeps Automatic brightness enabled.\n" +
-                "• The app does not read the ambient-light sensor or choose brightness levels itself.\n" +
-                "• Android marks screen_auto_brightness_adj as a private system setting, so the write is performed through Shizuku shell access.\n" +
-                "• Enable writes screen_brightness_mode = 1 and screen_auto_brightness_adj = -0.20.\n" +
-                "• Disable restores the adjustment value saved before Enable.\n\n" +
-                "Shizuku must be installed, started, and authorized for this app. The old Modify system settings permission is no longer required."
+                "How this build works:\n" +
+                "• HyperOS Automatic brightness stays enabled and continues using its own sensor/learning logic.\n" +
+                "• This build no longer relies on screen_auto_brightness_adj. On this HyperOS device the value can be stored without producing a visible brightness change.\n" +
+                "• Instead it enables Android's native Reduce Bright Colors / Extra Dim transform through Shizuku and sets its level to 20.\n" +
+                "• This changes the final displayed luminance, so the effect should be immediately visible while Auto brightness remains ON.\n" +
+                "• Disable restores the Extra Dim state and level that existed before Enable.\n\n" +
+                "Important: Extra Dim level 20 is an intensity value, not a guaranteed physical 20% reduction in panel nits."
         );
         note.setTextSize(14);
         note.setPadding(0, dp(16), 0, 0);
@@ -174,14 +174,18 @@ public class MainActivity extends Activity {
         boolean shizukuGranted = shizukuRunning && ShizukuBridge.hasPermission();
         boolean featureEnabled = HyperBrightnessTileService.isEnabled(this);
         boolean autoEnabled = HyperBrightnessTileService.isAutomaticBrightnessEnabled(this);
-        float adjustment = HyperBrightnessTileService.getCurrentAdjustment(this);
+        boolean extraDimActive = HyperBrightnessTileService.getReduceBrightColorsActivated(this);
+        int extraDimLevel = HyperBrightnessTileService.getReduceBrightColorsLevel(this);
+        float legacyAdjustment = HyperBrightnessTileService.getCurrentAdjustment(this);
 
         statusText.setText(
                 "Shizuku: " + (shizukuRunning ? "RUNNING" : "NOT RUNNING") +
                 "\nShizuku permission: " + (shizukuGranted ? "GRANTED" : "NOT GRANTED") +
                 "\nFeature: " + (featureEnabled ? "ON" : "OFF") +
                 "\nSystem auto brightness: " + (autoEnabled ? "ON" : "OFF") +
-                "\nCurrent auto-brightness adjustment: " + String.format(Locale.US, "%.2f", adjustment)
+                "\nNative Extra Dim: " + (extraDimActive ? "ON" : "OFF") +
+                "\nExtra Dim level: " + extraDimLevel +
+                "\nLegacy auto-brightness adjustment: " + String.format(Locale.US, "%.2f", legacyAdjustment)
         );
     }
 
