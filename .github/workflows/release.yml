@@ -1,0 +1,72 @@
+name: Release APK
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'app/build.gradle'
+      - '.github/workflows/release.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(sed -n "s/.*versionName '\\([^']*\\)'.*/\\1/p" app/build.gradle | head -n1)
+          if [ -z "$VERSION" ]; then
+            echo "Unable to read versionName from app/build.gradle" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Build APK
+        run: gradle :app:assembleDebug --no-daemon
+
+      - name: Prepare release APK
+        shell: bash
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk "HyperBrightnessWidget-v${{ steps.version.outputs.version }}-debug.apk"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; uploading APK."
+            gh release upload "$TAG" "HyperBrightnessWidget-v$VERSION-debug.apk" --clobber
+          else
+            gh release create "$TAG" "HyperBrightnessWidget-v$VERSION-debug.apk" \
+              --target "$GITHUB_SHA" \
+              --title "HyperBrightnessWidget $TAG" \
+              --generate-notes
+          fi
