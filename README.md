@@ -1,52 +1,15 @@
-# HyperBrightnessWidget
+# Local AI Relay
 
-Android app for Redmi/HyperOS screen brightness control.
+Trạm điều phối đa AI trên Android — bàn giao thiết kế v0.1.
 
-Current scope:
+Mục tiêu: nhập một yêu cầu, điều phối các AI theo kịch bản A → B → C → A, có chế độ tự động cho kết nối được phép và chế độ duyệt từng chặng; lưu lịch sử và tiến trình trên thiết bị, khôi phục được sau gián đoạn. Không yêu cầu máy chủ điều phối riêng. Các nhà cung cấp online vẫn xử lý dữ liệu trên máy chủ của họ.
 
-- Manual raw brightness control: 20/30/40/50/60%.
-- Quick Settings tile cycles brightness levels.
-- Background service can auto-start after boot or package update.
-- Light sensor is used only for too-dark / too-bright handling and one-time return to normal.
+## Tài liệu chính
+- [Đặc tả kiến trúc, giao thức và tiêu chí nghiệm thu](docs/ARCHITECTURE.md)
 
-## Raw brightness levels
+## Trạng thái
+Đây là bàn giao kiến trúc, chưa phải ứng dụng Android hoặc APK. Mã điều chỉnh độ sáng và cấu hình build/release cũ không được chuyển sang nhánh thiết kế này. Lịch sử Git vẫn được giữ nguyên.
 
-- 20% = raw 11
-- 30% = raw 17
-- 40% = raw 26
-- 50% = raw 38
-- 60% = raw 49
+Thứ tự thực hiện: Contract → Mock Connector → Engine + checkpoint → Quota & Routing → Connector thực tế → UI Android. Thử nghiệm sớm tính tương thích đăng nhập và vòng đời trình duyệt song song, không phụ thuộc vào kết quả để triển khai lõi.
 
-## Light sensor hysteresis
-
-State `NORMAL`:
-
-- `lux < 35` -> state `TOO_DARK`, apply 20%, raw 11.
-- `lux >= 800` -> state `TOO_BRIGHT`, apply 60%, raw 49.
-- `35 <= lux < 800` -> do nothing, user can adjust manually.
-
-State `TOO_DARK`:
-
-- `lux > 70` -> return to `NORMAL`, apply 30%, raw 17 once.
-- `lux <= 70` -> keep current state.
-
-State `TOO_BRIGHT`:
-
-- `lux < 550` -> return to `NORMAL`, apply 30%, raw 17 once.
-- `lux >= 550` -> keep current state.
-
-## Build on GitHub
-
-Open **Actions** -> **Build APK** -> **Run workflow**.
-
-The output APK is uploaded as artifact:
-
-`RedmiScreenBrightness-debug-apk`
-
-APK path inside the artifact:
-
-`app-debug.apk`
-
-## Permission
-
-The app requires Android's special **Modify system settings** permission before it can write brightness values. Open the app once after installation and grant the permission.
+Không xoay vòng tài khoản để vượt hạn mức, không vượt CAPTCHA, không tự động hóa kênh không được nhà cung cấp cho phép. Ưu tiên API chính thức miễn phí nếu có, BYOK, mô hình cục bộ và chuyển giao thủ công.
