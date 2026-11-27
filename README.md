@@ -1,24 +1,16 @@
-# Local AI Relay — MVP 0.1.0
+# Local AI Relay — Mock Lab
 
-Android local-first relay. Source implementation of an offline workflow engine, Mock Connector, and manual web handoff for ChatGPT, Gemini and Claude. See [target architecture](docs/ARCHITECTURE.md) for the larger design, not all of which is implemented.
+Ứng dụng Android local-first để kiểm chứng kiến trúc điều phối đa AI. Hai module Gradle `core` (Kotlin JVM) và `app` (Android). Các workflow GitHub Actions hiện có được giữ nguyên.
 
-## Model selection
-Every step stores a Provider + model ID independently. Enter the exact model name available in your account; previously used IDs become suggestions for that provider. Select the real model in the provider website and confirm it before accepting a response. The app cannot verify the actual web model, does not scrape accounts, and does not auto-switch accounts or circumvent limits. Mock has three explicit offline models; it echoes prompts for testing and is not an AI.
+## Sử dụng
+Mở app, tạo hội thoại, chọn AUTO hoặc REVIEW_EACH_STEP, chọn tuyến và model (`fast`, `deep`) riêng từng chặng, sửa vai trò và xác nhận tuyến dự phòng Mock. Mặc định A → B → C → A; B2 là tài khoản giả lập thứ hai của B, D là nhà cung cấp giả lập thay thế. Bấm chạy hoặc duyệt từng chặng. Có thể xem nhiều hội thoại đã lưu, trạng thái, kết quả và giả lập quota, xác thực, lỗi mạng, lỗi tích hợp, crash sau khi nhận yêu cầu hoặc phản hồi chậm; chọn tuyến cần giả lập trước khi bấm chạy. Xác thực lại Mock rồi bấm khôi phục; nếu tất cả tuyến đang cooldown, UI tự đánh giá lại khi thời hạn đã qua. Nút hủy dừng runner và giải phóng connector.
 
-## How to use
-Select four providers/models and instructions, enter a question, and start review mode. Review the generated prompt, copy it, open the provider website in your normal browser, select the model, submit manually, then paste the complete response. Repeat per step. An all-Mock workflow can also run automatically. The current workflow and exact approved request are stored privately in an atomic checkpoint; starting a new workflow overwrites the old one. No API keys, browser cookies, or credentials are stored. The app does not have Internet permission. Clipboard data is shared with Android and should not contain secrets.
+Tất cả kết nối hiện là Mock offline, không có đăng nhập, API, web automation hoặc AI thật. Danh mục model giả lập không phản ánh model hiện có ở các hãng. Không xoay vòng tài khoản thật để né giới hạn. Không có luồng clipboard/trình duyệt ngoài. Lịch sử nhiều hội thoại, quota, checkpoint và ledger Mock lưu trong SQLite, mỗi workflow có một bản ghi JSON độc lập; không ghi đè hội thoại khác. DB private chưa mã hóa riêng; dữ liệu MVP cũ không được nhập vào schema mới.
 
-## Build and test
-Requires JDK 17, Gradle 8.10.2 and Android SDK platform 35. No wrapper is bundled.
-- gradle :core:relayCheck
-- gradle :app:assembleDebug
-- adb install app/build/outputs/apk/debug/app-debug.apk
+## Build và kiểm thử
+JDK 17, Gradle 8.10.2, Android SDK 35. Không kèm wrapper.
 
-Alternative offline JVM check:
-kotlinc core/src/main/kotlin/relay/core/Relay.kt core/src/test/kotlin/relay/core/RelayTest.kt -include-runtime -d relay-tests.jar
-java -jar relay-tests.jar
+- `gradle :core:relayCheck` (bảy nhóm kiểm thử JVM; gồm sáu kịch bản bắt buộc)
+- `gradle :app:assembleDebug` (APK ở `app/build/outputs/apk/debug/app-debug.apk`)
 
-Observed locally: Kotlin/JVM 1.9.0 and JDK 21 compiled and ran four groups of checks: four-step model identity/context; serialized checkpoint recovery, quota pause, duplicate and mismatched reply rejection, manual reroute; cancellation; deterministic Mock crash recovery. Android SDK, Gradle, emulator, device, and live provider credentials were unavailable. No Android APK or live provider test is claimed.
-
-## Limitations vs target architecture
-MVP uses native Android Views and a versioned private AtomicFile checkpoint with Java serialization (not Room/Compose). Single current workflow only; no long-term history, encrypted storage, schema migration, live connector model discovery, real API integration, automatic web transfer, streaming, background runner, full reconciliation/error taxonomy or automatic quota sensing. The only automatic connector is Mock. The connector interface is a reduced synchronous prototype, not the full v0.1 target contract. Future changes to checkpoint schema require migration. No CI/release workflows were changed or added.
+`relayCheck` là harness JVM dùng `check`, chạy không phụ thuộc Android; local có thể biên dịch bằng `kotlinc` với kotlinx-coroutines-core-jvm.jar. GitHub Actions gọi hai lệnh trên. Xem kết quả từng commit trong Actions; kiểm thử Android thực, SQLite trên thiết bị, model catalog thật và connector thật chưa được xác minh ở bước này. Xem [kiến trúc](docs/ARCHITECTURE.md).
