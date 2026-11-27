@@ -1,0 +1,38 @@
+name: Publish Local AI Relay v0.1.0 Debug
+on:
+  push:
+    branches: [local-ai-relay]
+    paths:
+      - '.github/workflows/publish-relay-v0.1.0-debug.yml'
+permissions:
+  contents: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Download verified debug build
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh run view 45924519772 --json conclusion --jq .conclusion)" = success
+          test "$(gh run view 45924519772 --json headSha --jq .headSha)" = 6427b8359bd25a6c346f7d369f7b949e6b03d32c
+          gh run download 45924519772 --name Local-AI-Relay-debug --dir release-apk
+          test -s release-apk/app-debug.apk
+          mv release-apk/app-debug.apk release-apk/Local-AI-Relay-v0.1.0-debug.apk
+          (cd release-apk && sha256sum Local-AI-Relay-v0.1.0-debug.apk > SHA256SUMS.txt)
+      - name: Publish prerelease without overwriting an existing release
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create local-ai-relay-v0.1.0-debug \
+            release-apk/Local-AI-Relay-v0.1.0-debug.apk release-apk/SHA256SUMS.txt \
+            --target 6427b8359bd25a6c346f7d369f7b949e6b03d32c \
+            --title "Local AI Relay v0.1.0 Debug" --prerelease \
+            --notes "Android debug MVP. Built and JVM checks passed in run 45924519772. Per-step model selection, offline mock and manual web handoff. Not tested on a physical Android device; live AI integration is not implemented."
